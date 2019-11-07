@@ -49,7 +49,7 @@ class SortableFlatList extends Component {
   _scrollOffset = 0
   _containerSize
   _containerOffset
-  _move = 0
+  _move = 0 // initial value is tappedPixel 
   _hasMoved = false
   _refs = []
   _additionalOffset = 0
@@ -63,6 +63,8 @@ class SortableFlatList extends Component {
       onStartShouldSetPanResponderCapture: (evt, gestureState) => {
         const { pageX, pageY } = evt.nativeEvent
         const { horizontal } = this.props
+        console.log("onStartShouldSetPanResponderCapture");
+        console.log('pageY =>', pageY)
         const tappedPixel = horizontal ? pageX : pageY
         const tappedRow = this._pixels[Math.floor(this._scrollOffset + tappedPixel)]
         if (tappedRow === undefined) return false
@@ -72,7 +74,7 @@ class SortableFlatList extends Component {
         }
         this._moveAnim.setValue(tappedPixel)
         this._move = tappedPixel
-
+        
         // compensate for translucent or hidden StatusBar on android
         if (Platform.OS === 'android' && !horizontal) {
           const isTranslucent = StatusBar._propsStack.reduce(((acc, cur) => {
@@ -88,23 +90,25 @@ class SortableFlatList extends Component {
         if (this.props.scrollingContainerOffset !== undefined) {
           this._offset.setValue((this._additionalOffset + this._containerOffset - this.props.scrollingContainerOffset - this._androidStatusBarOffset) * -1)
         } else {
-          this._offset.setValue((this._additionalOffset + this._containerOffset - this._androidStatusBarOffset) * -1)
+            this._offset.setValue((this._additionalOffset + this._containerOffset - this._androidStatusBarOffset) * -1)
         }
-
         return false
       },
       onMoveShouldSetPanResponder: (evt, gestureState) => {
+        console.log("onMoveShouldSetPanResponder");
+        console.log("gestureState", gestureState)
         const { activeRow } = this.state
         const { horizontal } = this.props
         const { moveX, moveY } = gestureState
         const move = horizontal ? moveX : moveY
         const shouldSet = activeRow > -1
-        this._moveAnim.setValue(move)
+        this._moveAnim.setValue(move);
+        console.log('active row', activeRow);
         if (shouldSet) {
           this.setState({ showHoverComponent: true })
           // Kick off recursive row animation
           this.animate()
-          this._hasMoved = true
+          this._hasMoved = true;
         }
         return shouldSet;
       },
@@ -113,15 +117,21 @@ class SortableFlatList extends Component {
           const { moveX, moveY } = gestureState
           const { horizontal } = this.props
           this._move = horizontal ? moveX : moveY
+
         }
       }),
       onPanResponderTerminationRequest: ({ nativeEvent }, gestureState) => false,
       onPanResponderRelease: () => {
+        console.log("onPanResponderRelease")
         const { activeRow, spacerIndex } = this.state
+        console.log("spacerIndex " , spacerIndex);        
         const { data, horizontal } = this.props
+
         const activeMeasurements = this._measurements[activeRow]
         const spacerMeasurements = this._measurements[spacerIndex]
         const lastElementMeasurements = this._measurements[data.length - 1]
+        console.log('this.move', this._move);
+        
         if (activeRow === -1) return
         // If user flings row up and lets go in the middle of an animation measurements can error out. 
         // Give layout animations some time to complete and animate element into place before calling onMoveEnd
@@ -154,6 +164,10 @@ class SortableFlatList extends Component {
     this.state = initialState
   }
 
+  componentDidMount() {
+   console.log('Vertical Offset ', this.props.containerVerticalOffset);
+  }
+  
   onReleaseAnimationEnd = () => {
     const { data, onMoveEnd } = this.props
     const { activeRow, spacerIndex } = this.state
@@ -231,12 +245,16 @@ class SortableFlatList extends Component {
 
   getSpacerIndex = (move, activeRow) => {
     const { horizontal } = this.props
+    console.log('getSpacerIndex', 'verticalOffsert', this.props.containerVerticalOffset)
     if (activeRow === -1 || !this._measurements[activeRow]) return -1
     // Find the row that contains the midpoint of the hovering item
     const hoverItemSize = this._measurements[activeRow][horizontal ? 'width' : 'height']
-    const hoverItemMidpoint = move - this._additionalOffset + hoverItemSize / 2
+    const hoverItemMidpoint = move - this._additionalOffset + hoverItemSize / 2 // middle of the active row
     const hoverPoint = Math.floor(hoverItemMidpoint + this._scrollOffset)
-    let spacerIndex = this._pixels[hoverPoint]
+    console.log('this.scrollOffset', this._scrollOffset);
+
+    let spacerIndex = this._pixels[hoverPoint];
+    console.log('spacerIndex remix', spacerIndex);
     if (spacerIndex === undefined) {
       // Fallback in case we can't find index in _pixels array
       spacerIndex = this._measurements.findIndex(({ width, height, x, y }) => {
@@ -245,8 +263,10 @@ class SortableFlatList extends Component {
         return hoverPoint > itemOffset && hoverPoint < (itemOffset + itemSize)
       })
     }
+    // factor in containerVerticalOffset
+    const verticalOffset = (this.props.containerVerticalOffset / 57);
     // Spacer index differs according to placement. See note in onPanResponderRelease
-    return spacerIndex > activeRow ? spacerIndex + 1 : spacerIndex
+    return spacerIndex > activeRow ? spacerIndex + verticalOffset + 1  : spacerIndex + verticalOffset
   }
 
   measureItem = (index) => {
@@ -276,6 +296,7 @@ class SortableFlatList extends Component {
   }
 
   move = (hoverComponent, index) => {
+    // console.log(this._measurements)
     const { onMoveBegin } = this.props
     if (this._releaseAnim) {
       this._releaseAnim.stop()
@@ -345,16 +366,13 @@ class SortableFlatList extends Component {
     )
   }
 
-  measureContainer = ref => {
-    if (ref && this._containerOffset === undefined) {
-      // setTimeout required or else dimensions reported as 0
-      setTimeout(() => {
-        const { horizontal } = this.props
-        ref.measure((x, y, width, height, pageX, pageY) => {
-          this._containerOffset = horizontal ? pageX : pageY
-          this._containerSize = horizontal ? width : height
-        })
-      }, 50)
+  measureContainer = event => {
+    if (this.containerView) {
+      const { horizontal } = this.props
+      this.containerView.measure((x, y, width, height, pageX, pageY) => {
+        this._containerOffset = horizontal ? pageX : pageY
+        this._containerSize = horizontal ? width : height
+      })      
     }
   }
 
@@ -366,15 +384,20 @@ class SortableFlatList extends Component {
     }
   }
 
+  onScroll = (props) => {
+    const { onScroll, horizontal } = this.props
+    this._scrollOffset = props.nativeEvent.contentOffset[horizontal ? 'x' : 'y']
+    console.log("scrolling", this._scrollOffset);
+    onScroll && onScroll(props)
+  }
+
   render() {
-    const { horizontal, keyExtractor } = this.props
+    const { keyExtractor } = this.props
 
     return (
       <View
-        onLayout={e => {
-          // console.log('layout', e.nativeEvent)
-        }}
-        ref={this.measureContainer}
+        ref={ref => {this.containerView = ref}}
+        onLayout={this.measureContainer}
         {...this._panResponder.panHandlers}
         style={styles.wrapper} // Setting { opacity: 1 } fixes Android measurement bug: https://github.com/facebook/react-native/issues/18034#issuecomment-368417691
       >
@@ -385,7 +408,7 @@ class SortableFlatList extends Component {
           renderItem={this.renderItem}
           extraData={this.state}
           keyExtractor={keyExtractor || this.keyExtractor}
-          onScroll={({ nativeEvent }) => this._scrollOffset = nativeEvent.contentOffset[horizontal ? 'x' : 'y']}
+          onScroll={this.onScroll}
           scrollEventThrottle={16}
         />
         {this.renderHoverComponent()}
@@ -408,7 +431,7 @@ class RowItem extends React.PureComponent {
     const { move, moveEnd, renderItem, item, index } = this.props
     const hoverComponent = renderItem({ isActive: true, item, index, move: () => null, moveEnd })
     move(hoverComponent, index)
-  }
+    }
 
   render() {
     const { moveEnd, isActiveRow, horizontal, renderItem, item, index, setRef } = this.props
